@@ -1,24 +1,24 @@
-using Avalonia.Input.Platform;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
-using Avalonia.Reactive;
+using Avalonia.Automation.Peers;
+using Avalonia.Controls.Metadata;
 using Avalonia.Controls.Presenters;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Utils;
-using Avalonia.Input;
-using Avalonia.Interactivity;
-using Avalonia.Media;
-using Avalonia.Metadata;
 using Avalonia.Data;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
+using Avalonia.Interactivity;
 using Avalonia.Layout;
-using Avalonia.Utilities;
-using Avalonia.Controls.Metadata;
+using Avalonia.Media;
 using Avalonia.Media.TextFormatting;
-using Avalonia.Automation.Peers;
 using Avalonia.Media.TextFormatting.Unicode;
+using Avalonia.Metadata;
+using Avalonia.Reactive;
 using Avalonia.Threading;
+using Avalonia.Utilities;
 
 namespace Avalonia.Controls
 {
@@ -355,7 +355,7 @@ namespace Avalonia.Controls
 
         private TextPresenter? _presenter;
         private ScrollViewer? _scrollViewer;
-        private readonly TextBoxTextInputMethodClient _imClient = new();
+        private readonly TextBoxTextInputMethodClient _imClient;
         private readonly UndoRedoHelper<UndoRedoState> _undoRedoHelper;
         private bool _isUndoingRedoing;
         private bool _canCut;
@@ -387,6 +387,7 @@ namespace Avalonia.Controls
 
         public TextBox()
         {
+            _imClient = OperatingSystem.IsAndroid() ? new DirectTextInputMethodClient() : new SurroundingTextInputMethodClient();
             var horizontalScrollBarVisibility = Observable.CombineLatest(
                 this.GetObservable(AcceptsReturnProperty),
                 this.GetObservable(TextWrappingProperty),

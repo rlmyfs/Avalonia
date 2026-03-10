@@ -2,110 +2,34 @@ using System;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input.TextInput;
 using Avalonia.Media.TextFormatting;
-using Avalonia.Reactive;
 using Avalonia.Utilities;
 
 namespace Avalonia.Controls
 {
-    internal class TextBoxTextInputMethodClient : TextInputMethodClient
+    internal abstract class TextBoxTextInputMethodClient : TextInputMethodClient
     {
-        private TextBox? _parent;
-        private TextPresenter? _presenter;
-        private bool _selectionChanged;
-        private bool _isInChange;
+        public TextBox? Parent { get; set; }
 
-        public override Visual TextViewVisual => _presenter!;
-
-        public override string SurroundingText
-        {
-            get
-            {
-                if (_presenter is null || _parent is null)
-                {
-                    return "";
-                }
-
-                if (_parent.CaretIndex != _presenter.CaretIndex)
-                {
-                    _presenter.SetCurrentValue(TextPresenter.CaretIndexProperty, _parent.CaretIndex);
-                }
-
-                if (_parent.Text != _presenter.Text)
-                {
-                    _presenter.SetCurrentValue(TextPresenter.TextProperty, _parent.Text);
-                }
-
-                var lineIndex = _presenter.TextLayout.GetLineIndexFromCharacterIndex(_presenter.CaretIndex, false);
-
-                var textLine = _presenter.TextLayout.TextLines[lineIndex];
-
-                var lineText = GetTextLineText(textLine);
-
-                return lineText;
-            }
-        }
+        public TextPresenter? Presenter { get; set; }
+        public override Visual TextViewVisual => Presenter!;
 
         public override Rect CursorRectangle
         {
             get
             {
-                if (_parent == null || _presenter == null)
+                if (Parent == null || Presenter == null)
                 {
                     return default;
                 }
 
-                var transform = _presenter.TransformToVisual(_parent);
+                var transform = Presenter.TransformToVisual(Parent);
 
                 if (transform == null)
                 {
                     return default;
                 }
 
-                return _presenter.GetCursorRectangle().TransformToAABB(transform.Value);
-            }
-        }
-
-        public override TextSelection Selection
-        {
-            get
-            {
-                if (_presenter is null || _parent is null)
-                {
-                    return default;
-                }
-
-                var lineIndex = _presenter.TextLayout.GetLineIndexFromCharacterIndex(_parent.CaretIndex, false);
-
-                var textLine = _presenter.TextLayout.TextLines[lineIndex];
-
-                var lineStart = textLine.FirstTextSourceIndex;
-
-                var selectionStart = Math.Max(0, _parent.SelectionStart - lineStart);
-
-                var selectionEnd = Math.Max(0, _parent.SelectionEnd - lineStart);
-
-                return new TextSelection(selectionStart, selectionEnd);
-            }
-            set
-            {
-                if (_parent is null || _presenter is null)
-                {
-                    return;
-                }
-
-                var lineIndex = _presenter.TextLayout.GetLineIndexFromCharacterIndex(_parent.CaretIndex, false);
-
-                var textLine = _presenter.TextLayout.TextLines[lineIndex];
-
-                var lineStart = textLine.FirstTextSourceIndex;
-
-                var selectionStart = lineStart + value.Start;
-                var selectionEnd = lineStart + value.End;
-
-                _parent.SelectionStart = selectionStart;
-                _parent.SelectionEnd = selectionEnd;
-
-                RaiseSelectionChanged();
+                return Presenter.GetCursorRectangle().TransformToAABB(transform.Value);
             }
         }
 
@@ -113,23 +37,57 @@ namespace Avalonia.Controls
 
         public override bool SupportsSurroundingText => true;
 
+        public override void ExecuteContextMenuAction(ContextMenuAction action)
+        {
+            base.ExecuteContextMenuAction(action);
+
+            switch (action)
+            {
+                case ContextMenuAction.Copy:
+                    Parent?.Copy();
+                    break;
+                case ContextMenuAction.Cut:
+                    Parent?.Cut();
+                    break;
+                case ContextMenuAction.Paste:
+                    Parent?.Paste();
+                    break;
+                case ContextMenuAction.SelectAll:
+                    Parent?.SelectAll();
+                    break;
+            }
+        }
+
+        public override void SetPreeditText(string? preeditText) => SetPreeditText(preeditText, null);
+
+        public override void SetPreeditText(string? preeditText, int? cursorPos)
+        {
+            if (Presenter == null || Parent == null)
+            {
+                return;
+            }
+
+            Presenter.SetCurrentValue(TextPresenter.PreeditTextProperty, preeditText);
+            Presenter.SetCurrentValue(TextPresenter.PreeditTextCursorPositionProperty, cursorPos);
+        }
+
         public void SetPresenter(TextPresenter? presenter, TextBox? parent)
         {
-            if (_parent != null)
+            if (Parent != null)
             {
-                _parent.PropertyChanged -= OnParentPropertyChanged;
-                _parent.Tapped -= OnParentTapped;
+                Parent.PropertyChanged -= OnParentPropertyChanged;
+                Parent.Tapped -= OnParentTapped;
             }
 
-            _parent = parent;
+            Parent = parent;
 
-            if (_parent != null)
+            if (Parent != null)
             {
-                _parent.PropertyChanged += OnParentPropertyChanged;
-                _parent.Tapped += OnParentTapped;
+                Parent.PropertyChanged += OnParentPropertyChanged;
+                Parent.Tapped += OnParentTapped;
             }
 
-            var oldPresenter = _presenter;
+            var oldPresenter = Presenter;
 
             if (oldPresenter != null)
             {
@@ -138,11 +96,11 @@ namespace Avalonia.Controls
                 oldPresenter.CaretBoundsChanged -= (s, e) => RaiseCursorRectangleChanged();
             }
 
-            _presenter = presenter;
+            Presenter = presenter;
 
-            if (_presenter != null)
+            if (Presenter != null)
             {
-                _presenter.CaretBoundsChanged += (s, e) => RaiseCursorRectangleChanged();
+                Presenter.CaretBoundsChanged += (s, e) => RaiseCursorRectangleChanged();
             }
 
             RaiseTextViewVisualChanged();
@@ -150,22 +108,147 @@ namespace Avalonia.Controls
             RaiseCursorRectangleChanged();
         }
 
+        private void OnParentPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+        {
+            if (e.Property == TextBox.TextProperty)
+            {
+                RaiseSurroundingTextChanged();
+            }
+
+            if (e.Property == TextBox.SelectionStartProperty || e.Property == TextBox.SelectionEndProperty)
+            {
+                if (IsInChange)
+                    HasSelectionChanged = true;
+                else
+                    RaiseSelectionChanged();
+            }
+        }
+
         private void OnParentTapped(object? sender, Input.TappedEventArgs e)
         {
             RaiseInputPaneActivationRequested();
         }
 
-        public override void SetPreeditText(string? preeditText) => SetPreeditText(preeditText, null);
+    }
 
-        public override void SetPreeditText(string? preeditText, int? cursorPos)
+    /// <summary>
+    /// A <see cref="TextBoxTextInputMethodClient"/> that returns selection and text as is. Made for platforms that
+    /// already handles surrounding text on their own, thus returning the original text allows better text and bounds
+    /// predictions on those platforms.
+    /// </summary>
+    internal class DirectTextInputMethodClient : TextBoxTextInputMethodClient
+    {
+        public override string SurroundingText
         {
-            if (_presenter == null || _parent == null)
+            get
             {
-                return;
+                return Presenter?.Text ?? "";
+            }
+        }
+
+        public override TextSelection Selection
+        {
+            get
+            {
+                if (Presenter is null || Parent is null)
+                {
+                    return default;
+                }
+
+                return new TextSelection(Parent.SelectionStart, Parent.SelectionEnd);
             }
 
-            _presenter.SetCurrentValue(TextPresenter.PreeditTextProperty, preeditText);
-            _presenter.SetCurrentValue(TextPresenter.PreeditTextCursorPositionProperty, cursorPos);
+            set
+            {
+                if (Parent is null || Presenter is null)
+                {
+                    return;
+                }
+
+                using var _ = BeginChange();
+
+                Parent.SelectionStart = value.Start;
+                Parent.SelectionEnd = value.End;
+            }
+        }
+    }
+
+    /// <summary>
+    /// A <see cref="TextBoxTextInputMethodClient"/> that returns only text surrounding the current selection.
+    /// </summary>
+    internal class SurroundingTextInputMethodClient : TextBoxTextInputMethodClient
+    {
+        public override string SurroundingText
+        {
+            get
+            {
+                if (Presenter is null || Parent is null)
+                {
+                    return "";
+                }
+
+                if (Parent.CaretIndex != Presenter.CaretIndex)
+                {
+                    Presenter.SetCurrentValue(TextPresenter.CaretIndexProperty, Parent.CaretIndex);
+                }
+
+                if (Parent.Text != Presenter.Text)
+                {
+                    Presenter.SetCurrentValue(TextPresenter.TextProperty, Parent.Text);
+                }
+
+                var lineIndex = Presenter.TextLayout.GetLineIndexFromCharacterIndex(Presenter.CaretIndex, false);
+
+                var textLine = Presenter.TextLayout.TextLines[lineIndex];
+
+                var lineText = GetTextLineText(textLine);
+
+                return lineText;
+            }
+        }
+
+        public override TextSelection Selection
+        {
+            get
+            {
+                if (Presenter is null || Parent is null)
+                {
+                    return default;
+                }
+
+                var lineIndex = Presenter.TextLayout.GetLineIndexFromCharacterIndex(Parent.CaretIndex, false);
+
+                var textLine = Presenter.TextLayout.TextLines[lineIndex];
+
+                var lineStart = textLine.FirstTextSourceIndex;
+
+                var selectionStart = Math.Max(0, Parent.SelectionStart - lineStart);
+
+                var selectionEnd = Math.Max(0, Parent.SelectionEnd - lineStart);
+
+                return new TextSelection(selectionStart, selectionEnd);
+            }
+            set
+            {
+                if (Parent is null || Presenter is null)
+                {
+                    return;
+                }
+
+                var lineIndex = Presenter.TextLayout.GetLineIndexFromCharacterIndex(Parent.CaretIndex, false);
+
+                var textLine = Presenter.TextLayout.TextLines[lineIndex];
+
+                var lineStart = textLine.FirstTextSourceIndex;
+
+                var selectionStart = lineStart + value.Start;
+                var selectionEnd = lineStart + value.End;
+
+                Parent.SelectionStart = selectionStart;
+                Parent.SelectionEnd = selectionEnd;
+
+                RaiseSelectionChanged();
+            }
         }
 
         private static string GetTextLineText(TextLine textLine)
@@ -181,11 +264,7 @@ namespace Avalonia.Controls
             {
                 if (run.Length > 0)
                 {
-#if NET6_0_OR_GREATER
                     builder.Append(run.Text.Span);
-#else
-                    builder.Append(run.Text.Span.ToArray());
-#endif
                 }
             }
 
@@ -194,62 +273,6 @@ namespace Avalonia.Controls
             StringBuilderCache.Release(builder);
 
             return lineText;
-        }
-
-        public override void ExecuteContextMenuAction(ContextMenuAction action)
-        {
-            base.ExecuteContextMenuAction(action);
-
-            switch (action)
-            {
-                case ContextMenuAction.Copy:
-                    _parent?.Copy();
-                    break;
-                case ContextMenuAction.Cut:
-                    _parent?.Cut();
-                    break;
-                case ContextMenuAction.Paste:
-                    _parent?.Paste();
-                    break;
-                case ContextMenuAction.SelectAll:
-                    _parent?.SelectAll();
-                    break;
-            }
-        }
-
-        private void OnParentPropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
-        {
-            if (e.Property == TextBox.TextProperty)
-            {
-                RaiseSurroundingTextChanged();
-            }
-
-            if (e.Property == TextBox.SelectionStartProperty || e.Property == TextBox.SelectionEndProperty)
-            {
-                if (_isInChange)
-                    _selectionChanged = true;
-                else
-                    RaiseSelectionChanged();
-            }
-        }
-
-        internal IDisposable BeginChange()
-        {
-            if (_isInChange)
-                return Disposable.Empty;
-
-            _isInChange = true;
-            return Disposable.Create(RaiseEvents);
-        }
-
-        private void RaiseEvents()
-        {
-            _isInChange = false;
-
-            if (_selectionChanged)
-                RaiseSelectionChanged();
-
-            _selectionChanged = false;
         }
     }
 }

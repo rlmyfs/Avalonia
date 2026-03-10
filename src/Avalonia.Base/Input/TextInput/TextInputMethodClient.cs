@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Reactive;
 
 namespace Avalonia.Input.TextInput
 {
@@ -64,6 +65,9 @@ namespace Avalonia.Input.TextInput
         /// </summary>
         public abstract TextSelection Selection { get; set; }
 
+        internal bool IsInChange { get; set; }
+        internal bool HasSelectionChanged { get; set; }
+
         /// <summary>
         /// Sets the non-committed input string
         /// </summary>
@@ -111,6 +115,25 @@ namespace Avalonia.Input.TextInput
         protected virtual void RequestReset()
         {
             ResetRequested?.Invoke(this, EventArgs.Empty);
+        }
+
+        internal IDisposable BeginChange()
+        {
+            if (IsInChange)
+                return Disposable.Empty;
+
+            IsInChange = true;
+            return Disposable.Create(RaiseEvents);
+        }
+
+        private void RaiseEvents()
+        {
+            IsInChange = false;
+
+            if (HasSelectionChanged)
+                RaiseSelectionChanged();
+
+            HasSelectionChanged = false;
         }
     }
 
